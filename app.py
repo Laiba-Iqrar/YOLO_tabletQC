@@ -1,5 +1,5 @@
 # =============================
-# app.py — Tablet Quality Control (LIVE + IMAGE MODES)
+# app.py — Tablet Quality Control (LIVE + IMAGE MODES, MOBILE FIX)
 # =============================
 
 import streamlit as st
@@ -31,7 +31,7 @@ st.set_page_config(
 )
 
 # =============================
-# CSS (unchanged from your app)
+# CSS
 # =============================
 st.markdown("""
 <style>
@@ -64,7 +64,7 @@ def load_model(model_path: str):
     return YOLO(model_path)
 
 # =============================
-# IMAGE inference (existing logic)
+# IMAGE inference
 # =============================
 
 def run_model_inference(image: Image.Image, model_path: str) -> Dict[str, Any]:
@@ -111,7 +111,7 @@ def create_annotated_image(image: Image.Image, result: Dict) -> Image.Image:
     return image
 
 # =============================
-# LIVE VIDEO PROCESSOR (NEW)
+# LIVE VIDEO PROCESSOR (MOBILE FIX)
 # =============================
 
 class YOLOVideoProcessor(VideoProcessorBase):
@@ -174,10 +174,9 @@ with left:
         webrtc_streamer(
             key="tablet-live",
             video_processor_factory=lambda: YOLOVideoProcessor(model_path),
-            media_stream_constraints={
-                "video": {"facingMode": "environment"},
-                "audio": False
-            },
+            media_stream_constraints={"video": {"facingMode": "environment"}, "audio": False},
+            video_html_attrs={"controls": False, "autoPlay": True},
+            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
             async_processing=True
         )
 
