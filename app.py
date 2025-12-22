@@ -1,18 +1,16 @@
 # =============================
-# app.py — Tablet Quality Control (LIVE + IMAGE MODES, MOBILE FIX)
+# app.py — Tablet Quality Control (LIVE + IMAGE MODES, DROIDCAM)
 # =============================
 
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
-import io, base64, warnings
+import io, base64, warnings, time
 from typing import Dict, Any
 
-# --- YOLO + Live Video ---
+# --- YOLO ---
 from ultralytics import YOLO
 import cv2
-import av
 import numpy as np
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
 # =============================
 # Critical fixes
@@ -31,7 +29,7 @@ st.set_page_config(
 )
 
 # =============================
-# CSS
+# CSS (unchanged)
 # =============================
 st.markdown("""
 <style>
@@ -111,20 +109,6 @@ def create_annotated_image(image: Image.Image, result: Dict) -> Image.Image:
     return image
 
 # =============================
-# LIVE VIDEO PROCESSOR (MOBILE FIX)
-# =============================
-
-class YOLOVideoProcessor(VideoProcessorBase):
-    def __init__(self, model_path):
-        self.model = YOLO(model_path)
-
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        results = self.model.predict(img, conf=0.3, imgsz=640, verbose=False)
-        annotated = results[0].plot()
-        return av.VideoFrame.from_ndarray(annotated, format="bgr24")
-
-# =============================
 # Header
 # =============================
 
@@ -140,6 +124,7 @@ model_options = {
 
 selected_model = st.selectbox("Select Inspection Model", list(model_options.keys()))
 model_path = model_options[selected_model]
+model = load_model(model_path)
 
 # =============================
 # Layout
@@ -153,7 +138,7 @@ left, right = st.columns([2, 1])
 
 with right:
     st.subheader("Image Input")
-    mode = st.radio("Mode", ["Upload Image", "Live Camera"])
+    mode = st.radio("Mode", ["Upload Image", "Live Camera (DroidCam)"])
 
     uploaded_image = None
 
@@ -168,17 +153,53 @@ with right:
 
 with left:
 
-    if mode == "Live Camera":
-        st.subheader("📡 Live Camera Inspection")
+    if mode == "Live Camera (DroidCam)":
+        st.subheader("📡 Live Camera Inspection (DroidCam)")
 
-        webrtc_streamer(
-            key="tablet-live",
-            video_processor_factory=lambda: YOLOVideoProcessor(model_path),
-            media_stream_constraints={"video": {"facingMode": "environment"}, "audio": False},
-            video_html_attrs={"controls": False, "autoPlay": True},
-            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-            async_processing=True
-        )
+        start = st.button("▶ Start Camera")
+        stop = st.button("⏹ Stop Camera")
+
+        frame_placeholder = st.empty()
+        status = st.empty()
+
+        CAMERA_INDEX = 4   # change to 1 if needed
+
+        if start:
+            cap = cv2.VideoCapture(CAMERA_INDEX)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+
+            if not cap.isOpened():
+                st.error("❌ DroidCam not detected. Make sure it is running.")
+            else:
+                status.success("✅ DroidCam connected")
+
+                while cap.isOpened():
+                    if stop:
+                        break
+
+                    ret, frame = cap.read()
+                    if not ret:
+                        status.error("⚠ Camera frame not received")
+                        break
+
+                    # Zoom to avoid ultra-wide lens
+                    frame = cv2.resize(frame, None, fx=1.4, fy=1.4)
+
+                    results = model(frame, conf=0.3, verbose=False)
+                    annotated = results[0].plot()
+
+                    frame_placeholder.image(
+                        annotated,
+                        channels="BGR",
+                        use_container_width=True
+                    )
+
+                    time.sleep(0.02)
+
+                cap.release()
+                status.info("⏹ Camera stopped")
 
     elif uploaded_image:
         result = run_model_inference(uploaded_image, model_path)
@@ -186,10 +207,10 @@ with left:
         img_html = pil_to_base64(annotated)
 
         st.markdown(f"""
-        <div class="square-image-container">
-            <img src="{img_html}">
+        <div class=\"square-image-container\">
+            <img src=\"{img_html}\">
         </div>
-        <div class="defect-label">Detected: {result['prediction']}</div>
+        <div class=\"defect-label\">Detected: {result['prediction']}</div>
         """, unsafe_allow_html=True)
 
 # =============================
